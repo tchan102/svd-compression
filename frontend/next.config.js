@@ -1,9 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: 'standalone',
   images: {
-    domains: ['127.0.0.1', 'localhost'],
-    dangerouslyAllowSVG: true,
-    contentDispositionType: 'attachment',
     remotePatterns: [
       {
         protocol: 'http',
@@ -12,6 +10,9 @@ const nextConfig = {
         pathname: '/api/**',
       },
     ],
+  },
+  serverActions: {
+    bodySizeLimit: '5mb', // Adjust the limit as needed
   },
 }
 

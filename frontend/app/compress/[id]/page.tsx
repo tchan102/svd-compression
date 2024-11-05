@@ -5,7 +5,7 @@ import Image from 'next/image'
 import { Slider } from "@/components/ui/slider"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { convertToGrayscale, getCachedOrCompressImage } from '@/lib/image-utils'
+import { convertToGrayscale, getCachedOrCompressImage } from '../../../lib/image-utils'
 
 export default function CompressPage({ params }: { params: Promise<{ id: string }> }) {
   const [singularValues, setSingularValues] = useState(100)
@@ -13,6 +13,7 @@ export default function CompressPage({ params }: { params: Promise<{ id: string 
   const [originalImage, setOriginalImage] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000';
 
   const resolvedParams = use(params)
 
@@ -27,7 +28,7 @@ export default function CompressPage({ params }: { params: Promise<{ id: string 
   useEffect(() => {
     const fetchImage = async () => {
       try {
-        const response = await fetch(`http://127.0.0.1:8000/api/image/${resolvedParams.id}`)
+        const response = await fetch(`${BACKEND_URL}/api/image/${resolvedParams.id}`)
         if (!response.ok) {
           throw new Error(`Failed to load image: ${response.statusText}`)
         }
@@ -53,7 +54,7 @@ export default function CompressPage({ params }: { params: Promise<{ id: string 
   useEffect(() => {
     const compressImage = async (values: number) => {
       const response = await fetch(
-        `http://127.0.0.1:8000/api/compress/${resolvedParams.id}?values=${values}`
+        `${BACKEND_URL}/api/compress/${resolvedParams.id}?values=${values}`
       )
       if (!response.ok) {
         throw new Error(`Failed to compress image: ${response.statusText}`)

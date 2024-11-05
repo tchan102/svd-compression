@@ -1,13 +1,13 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response  # Add this import
+from fastapi.responses import Response
 import uuid
 import os
 from pathlib import Path
+from functools import lru_cache
 from svd import compress_image
 
 app = FastAPI()
-
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
@@ -89,25 +89,27 @@ async def get_original_image(image_id: str):
         print(f"Error getting original image: {str(e)}")  # Debug log
         raise HTTPException(status_code=500, detail=str(e))
 
+@lru_cache(maxsize=1000)  # Cache last 1000 compressions
+def get_cached_compression(image_id: str, values: int) -> bytes:
+    image_path = UPLOAD_DIR / f"{image_id}.png"
+    with open(image_path, "rb") as f:
+        image_data = f.read()
+    return compress_image(image_data, values)
+
 @app.get("/api/compress/{image_id}")
 async def compress(image_id: str, values: int):
-    """Compress image using SVD"""
+    """Compress image using SVD with caching"""
     try:
         image_path = UPLOAD_DIR / f"{image_id}.png"
         
         if not image_path.exists():
             raise HTTPException(status_code=404, detail="Image not found")
         
-        # Read image
-        with open(image_path, "rb") as f:
-            image_data = f.read()
-        
-        # Compress image
-        print(f"Compressing image {image_id} with values={values}")  # Debug log
-        compressed_data = compress_image(image_data, values)
+        # Get compressed data from cache or compute
+        compressed_data = get_cached_compression(image_id, values)
         return Response(content=compressed_data, media_type="image/png")
     except Exception as e:
-        print(f"Error during compression: {str(e)}")  # Debug log
+        print(f"Error during compression: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":

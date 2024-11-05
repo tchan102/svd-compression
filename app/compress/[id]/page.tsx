@@ -5,6 +5,7 @@ import Image from 'next/image'
 import { Slider } from "@/components/ui/slider"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { convertToGrayscale, getCachedOrCompressImage } from '@/lib/image-utils'
 
 export default function CompressPage({ params }: { params: Promise<{ id: string }> }) {
   const [singularValues, setSingularValues] = useState(100)
@@ -13,7 +14,6 @@ export default function CompressPage({ params }: { params: Promise<{ id: string 
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Unwrap params using React.use()
   const resolvedParams = use(params)
 
   const getCompressionZone = (value: number) => {
@@ -24,22 +24,21 @@ export default function CompressPage({ params }: { params: Promise<{ id: string 
     return 'low'
   }
 
-  // Load original image
   useEffect(() => {
     const fetchImage = async () => {
       try {
-        console.log('Fetching original image:', resolvedParams.id)
         const response = await fetch(`http://127.0.0.1:8000/api/image/${resolvedParams.id}`)
-        console.log('Original image response status:', response.status)
-        
         if (!response.ok) {
           throw new Error(`Failed to load image: ${response.statusText}`)
         }
         
         const blob = await response.blob()
-        const imageUrl = URL.createObjectURL(blob)
-        console.log('Created URL for original image:', imageUrl)
-        setOriginalImage(imageUrl)
+        const url = URL.createObjectURL(blob)
+        
+        // Convert to grayscale
+        const grayscaleUrl = await convertToGrayscale(url)
+        URL.revokeObjectURL(url) // Clean up original URL
+        setOriginalImage(grayscaleUrl)
       } catch (error) {
         console.error('Error fetching original image:', error)
         setError('Failed to load original image')
@@ -51,27 +50,29 @@ export default function CompressPage({ params }: { params: Promise<{ id: string 
     }
   }, [resolvedParams.id])
 
-  // Compress image when slider changes
   useEffect(() => {
-    const compressImage = async () => {
+    const compressImage = async (values: number) => {
+      const response = await fetch(
+        `http://127.0.0.1:8000/api/compress/${resolvedParams.id}?values=${values}`
+      )
+      if (!response.ok) {
+        throw new Error(`Failed to compress image: ${response.statusText}`)
+      }
+      const blob = await response.blob()
+      return URL.createObjectURL(blob)
+    }
+
+    const updateCompressedImage = async () => {
       if (!resolvedParams.id) return
       
       setIsLoading(true)
       try {
-        console.log('Compressing image:', resolvedParams.id, 'with values:', singularValues)
-        const response = await fetch(
-          `http://127.0.0.1:8000/api/compress/${resolvedParams.id}?values=${singularValues}`
+        const compressedUrl = await getCachedOrCompressImage(
+          resolvedParams.id,
+          singularValues,
+          compressImage
         )
-        console.log('Compression response status:', response.status)
-
-        if (!response.ok) {
-          throw new Error(`Failed to compress image: ${response.statusText}`)
-        }
-
-        const blob = await response.blob()
-        const imageUrl = URL.createObjectURL(blob)
-        console.log('Created URL for compressed image:', imageUrl)
-        setCompressedImage(imageUrl)
+        setCompressedImage(compressedUrl)
         setError(null)
       } catch (error) {
         console.error('Error compressing image:', error)
@@ -81,16 +82,17 @@ export default function CompressPage({ params }: { params: Promise<{ id: string 
       }
     }
 
-    compressImage()
+    const timeoutId = setTimeout(updateCompressedImage, 300)
+    return () => clearTimeout(timeoutId)
   }, [resolvedParams.id, singularValues])
 
-  // Clean up URLs when component unmounts
+  // Cleanup URLs when component unmounts
   useEffect(() => {
     return () => {
-      if (originalImage) URL.revokeObjectURL(originalImage)
-      if (compressedImage) URL.revokeObjectURL(compressedImage)
+      if (originalImage?.startsWith('blob:')) URL.revokeObjectURL(originalImage)
+      if (compressedImage?.startsWith('blob:')) URL.revokeObjectURL(compressedImage)
     }
-  }, [originalImage, compressedImage])
+  }, [])
 
   const compressionZone = getCompressionZone(singularValues)
 
@@ -123,9 +125,7 @@ export default function CompressPage({ params }: { params: Promise<{ id: string 
                   unoptimized 
                 />
               ) : (
-                <div className="flex items-center justify-center">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
-                </div>
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900" />
               )}
             </div>
           </div>
@@ -144,7 +144,7 @@ export default function CompressPage({ params }: { params: Promise<{ id: string 
               ) : (
                 <div className="flex items-center justify-center">
                   {isLoading ? (
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900" />
                   ) : (
                     <p className="text-sm text-gray-500">Adjust slider to compress</p>
                   )}
@@ -159,39 +159,66 @@ export default function CompressPage({ params }: { params: Promise<{ id: string 
             <label htmlFor="singular-values" className="text-sm font-medium">
               Singular Values: {singularValues}
             </label>
-            <Button
-              onClick={() => setSingularValues(100)}
-              size="sm"
-              variant="outline"
-            >
-              Reset
-            </Button>
+            <div className="space-x-2">
+              <Button
+                onClick={() => setSingularValues(100)}
+                size="sm"
+                variant="outline"
+              >
+                Reset (100)
+              </Button>
+              <Button
+                onClick={() => setSingularValues(1)}
+                size="sm"
+                variant="outline"
+                className="bg-red-50 hover:bg-red-100"
+              >
+                Min (1)
+              </Button>
+              <Button
+                onClick={() => setSingularValues(300)}
+                size="sm"
+                variant="outline"
+                className="bg-blue-50 hover:bg-blue-100"
+              >
+                Max (300)
+              </Button>
+            </div>
           </div>
-          <Slider
-            id="singular-values"
-            min={1}
-            max={300}
-            step={1}
-            value={[singularValues]}
-            onValueChange={(value) => setSingularValues(value[0])}
-            className="w-full"
-          />
+          <div className="pt-6 space-y-4">
+  <Slider
+    id="singular-values"
+    min={1}
+    max={300}
+    step={1}
+    value={[singularValues]}
+    onValueChange={(value) => {
+      const newValue = value[0]
+      if (newValue === 1) {
+        setSingularValues(1)
+      } else {
+        setSingularValues(Math.round(newValue / 10) * 10)
+      }
+    }}
+    className="w-full"
+  />
+</div>
         </div>
 
         <div className="text-sm mt-4 space-y-2 p-4 border rounded-lg">
-          <p className="font-medium mb-2">Compression level explanation:</p>
+          <p className="font-medium mb-2">Compression levels explained:</p>
           <ul className="space-y-2">
             <li className={cn(
               "p-2 rounded transition-colors",
               compressionZone === 'high' ? "bg-blue-100 dark:bg-blue-900" : ""
             )}>
-              <span className="font-medium">High Quality (200-300):</span> Best quality, largest file size
+              <span className="font-medium">High Quality (201-300):</span> Best quality, largest file size
             </li>
             <li className={cn(
               "p-2 rounded transition-colors",
               compressionZone === 'medium-high' ? "bg-blue-100 dark:bg-blue-900" : ""
             )}>
-              <span className="font-medium">Medium-High (100-200):</span> Good quality, moderate file size
+              <span className="font-medium">Medium-High (101-200):</span> Good quality, moderate file size
             </li>
             <li className={cn(
               "p-2 rounded transition-colors",
@@ -203,7 +230,7 @@ export default function CompressPage({ params }: { params: Promise<{ id: string 
               "p-2 rounded transition-colors",
               compressionZone === 'medium-low' ? "bg-yellow-100 dark:bg-yellow-900" : ""
             )}>
-              <span className="font-medium">Medium-Low (20-50):</span> More compression, noticeable quality loss
+              <span className="font-medium">Medium-Low (21-49):</span> More compression, noticeable quality loss
             </li>
             <li className={cn(
               "p-2 rounded transition-colors",
@@ -212,6 +239,11 @@ export default function CompressPage({ params }: { params: Promise<{ id: string 
               <span className="font-medium">High Compression (1-20):</span> Smallest file size, significant quality loss
             </li>
           </ul>
+        </div>
+
+        <div className="text-xs text-gray-500 text-center">
+          Tip: Click on any marker below the slider to quickly jump to that compression level.
+          Use the step buttons above for precise control (steps of 10).
         </div>
       </div>
     </div>

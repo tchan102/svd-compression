@@ -10,24 +10,42 @@ def ensure_grayscale(img: Image.Image) -> Image.Image:
         return img.convert('L')
     return img
 
+def gram_schmidt_qr(A):
+    """
+    Perform QR decomposition using the Gram-Schmidt process.
+    """
+    m, n = A.shape
+    Q = np.zeros((m, n))
+    R = np.zeros((n, n))
+
+    for j in range(n):
+        # Compute the j-th column of Q
+        v = A[:, j]
+        for i in range(j):
+            R[i, j] = np.dot(Q[:, i], v)
+            v = v - R[i, j] * Q[:, i]
+        R[j, j] = np.linalg.norm(v)
+        Q[:, j] = v / R[j, j]
+
+    return Q, R
+
 def compute_svd_via_qr(A: np.ndarray, max_iterations: int = 1000, tol: float = 1e-6):
     """
-    Compute the Singular Value Decomposition (SVD) using the QR algorithm.
+    Compute the Singular Value Decomposition (SVD) using the QR algorithm with manual QR decomposition.
     """
-    # Initialize
     m, n = A.shape
     U = np.eye(m)  # Orthogonal matrix for left singular vectors
     Vt = np.eye(n) # Orthogonal matrix for right singular vectors
     A_k = A.copy()
     
     for i in range(max_iterations):
-        # QR decomposition
-        Q, R = np.linalg.qr(A_k)
+        # QR decomposition using Gram-Schmidt
+        Q, R = gram_schmidt_qr(A_k)
         
         # Update U and Vt
         U = U @ Q
         A_k = R @ Vt.T
-        Q, R = np.linalg.qr(A_k.T)
+        Q, R = gram_schmidt_qr(A_k.T)
         Vt = Q.T @ Vt
         
         A_k = R.T
